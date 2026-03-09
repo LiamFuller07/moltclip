@@ -1,0 +1,85 @@
+services:
+  controller:
+    build:
+      context: ./controller
+      dockerfile: Dockerfile
+    ports:
+      - "8800:8800"
+    environment:
+      - CONTROLLER_PORT=8800
+      - CONTROLLER_SECRET=${CONTROLLER_SECRET}
+      - DATABASE_URL=postgresql://moltclip:moltclip@postgres:5432/moltclip
+      - REDIS_URL=redis://redis:6379
+      - MASTER_WORKER_URL=${MASTER_WORKER_URL}
+      - MAX_BROWSERS=${MAX_BROWSERS:-10}
+      - MAX_CLAUDE_INSTANCES=${MAX_CLAUDE_INSTANCES:-4}
+      - MAX_CODEX_INSTANCES=${MAX_CODEX_INSTANCES:-2}
+      - BROWSER_PROFILE_DIR=/data/profiles
+      - WORKSPACES_DIR=/data/workspaces
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - profiles:/data/profiles
+      - workspaces:/data/workspaces
+      - credentials:/data/credentials
+      - backups:/data/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      - POSTGRES_USER=moltclip
+      - POSTGRES_PASSWORD=moltclip
+      - POSTGRES_DB=moltclip
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moltclip"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  profiles:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/profiles
+  workspaces:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/workspaces
+  credentials:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/credentials
+  backups:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/backups

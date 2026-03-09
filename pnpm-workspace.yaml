@@ -1,0 +1,6 @@
+packages:
+  - packages/*
+  - packages/workers/*
+  - packages/vps/*
+  - packages/vps/mcp-servers/*
+  - packages/cli

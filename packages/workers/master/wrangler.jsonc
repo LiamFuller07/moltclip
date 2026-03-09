@@ -1,0 +1,56 @@
+{
+  "name": "moltclip-master",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-18",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // R2 bucket for durable state, backups, audit logs
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "moltclip-state"
+    }
+  ],
+
+  // KV namespaces for fast lookups
+  "kv_namespaces": [
+    {
+      "binding": "KV_AGENTS",
+      "id": "" // fill after creating namespace
+    },
+    {
+      "binding": "KV_PROFILES",
+      "id": ""
+    },
+    {
+      "binding": "KV_SESSIONS",
+      "id": ""
+    }
+  ],
+
+  // Cron triggers for heartbeat
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+
+  // Worker secrets (set via wrangler secret put)
+  // CONTROLLER_SECRET - shared secret for VPS auth
+  // AGENTMAIL_API_KEY
+  // PRIVACY_API_KEY
+
+  // Service bindings to other workers
+  "services": [
+    {
+      "binding": "IDENTITY_WORKER",
+      "service": "moltclip-identity"
+    },
+    {
+      "binding": "PAYMENT_WORKER",
+      "service": "moltclip-payment"
+    },
+    {
+      "binding": "SESSION_WORKER",
+      "service": "moltclip-session"
+    }
+  ]
+}
