@@ -1,22 +1,8 @@
-import { execFileSync } from "node:child_process";
+import { accessSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { userInfo } from "node:os";
 import { join } from "node:path";
 import pino from "pino";
 import { env } from "../env.js";
-
-// Determine the home directory for Claude Code agents
-function getAgentHome(): string {
-  if (userInfo().uid === 0) {
-    try {
-      return execFileSync("getent", ["passwd", "moltclip"], { encoding: "utf-8" })
-        .split(":")[5] || "/home/moltclip";
-    } catch {
-      return "/home/moltclip";
-    }
-  }
-  return userInfo().homedir;
-}
 
 const log = pino({ name: "workspace-setup" });
 
@@ -24,62 +10,78 @@ function cleanEnv(obj: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== ""));
 }
 
-let globalMcpWritten = false;
+/** Writes MCP config to workspace and returns the file path for --mcp-config */
+export async function writeMcpConfig(workspacePath: string): Promise<string> {
+  const servers: Record<string, { command: string; args: string[]; env?: Record<string, string> }> = {};
+
+  // Only add skill servers if their dist/index.js exists (built successfully)
+  const skillServers: Array<{
+    name: string;
+    condition: boolean;
+    entryFile: string;
+    env: Record<string, string>;
+  }> = [
+    {
+      name: "grok-research",
+      condition: !!env.xaiApiKey,
+      entryFile: join(env.skillsDir, "grok-research/dist/index.js"),
+      env: { XAI_API_KEY: env.xaiApiKey },
+    },
+    {
+      name: "harness-review",
+      condition: true,
+      entryFile: join(env.skillsDir, "harness-review/dist/index.js"),
+      env: { ANTHROPIC_API_KEY: env.anthropicApiKey },
+    },
+    {
+      name: "human-escalation",
+      condition: !!(env.xaiApiKey || env.xBearerToken || env.githubToken),
+      entryFile: join(env.skillsDir, "human-escalation/dist/index.js"),
+      env: cleanEnv({
+        XAI_API_KEY: env.xaiApiKey,
+        X_BEARER_TOKEN: env.xBearerToken,
+        GITHUB_TOKEN: env.githubToken,
+      }),
+    },
+    {
+      name: "self-review",
+      condition: true,
+      entryFile: join(env.skillsDir, "self-review/dist/index.js"),
+      env: cleanEnv({
+        ANTHROPIC_API_KEY: env.anthropicApiKey,
+        XAI_API_KEY: env.xaiApiKey,
+        FIRECRAWL_API_KEY: env.firecrawlApiKey,
+      }),
+    },
+  ];
+
+  for (const s of skillServers) {
+    if (!s.condition) continue;
+    try {
+      accessSync(s.entryFile);
+      servers[s.name] = { command: "node", args: [s.entryFile], env: s.env };
+    } catch {
+      log.warn({ skill: s.name, path: s.entryFile }, "skill not built, skipping MCP server");
+    }
+  }
+
+  // Codex CLI is always available (installed globally)
+  servers["codex"] = {
+    command: "codex",
+    args: ["--mcp"],
+    env: { ANTHROPIC_API_KEY: env.anthropicApiKey },
+  };
+
+  const mcpConfig = { mcpServers: servers };
+  log.info({ servers: Object.keys(servers) }, "MCP config generated");
+
+  const configPath = join(workspacePath, "mcp-config.json");
+  await writeFile(configPath, JSON.stringify(mcpConfig, null, 2));
+  return configPath;
+}
 
 export async function ensureWorkspace(workspacePath: string, agentId: string): Promise<void> {
   await mkdir(workspacePath, { recursive: true });
-
-  // Write global MCP config once (all agents share the same home dir)
-  if (!globalMcpWritten) {
-    const mcpConfig = {
-      mcpServers: {
-        ...(env.xaiApiKey ? {
-          "grok-research": {
-            command: "node",
-            args: [join(env.skillsDir, "grok-research/dist/index.js")],
-            env: { XAI_API_KEY: env.xaiApiKey },
-          },
-        } : {}),
-        "harness-review": {
-          command: "node",
-          args: [join(env.skillsDir, "harness-review/dist/index.js")],
-          env: { ANTHROPIC_API_KEY: env.anthropicApiKey },
-        },
-        ...(env.xaiApiKey || env.xBearerToken || env.githubToken ? {
-          "human-escalation": {
-            command: "node",
-            args: [join(env.skillsDir, "human-escalation/dist/index.js")],
-            env: cleanEnv({
-              XAI_API_KEY: env.xaiApiKey,
-              X_BEARER_TOKEN: env.xBearerToken,
-              GITHUB_TOKEN: env.githubToken,
-            }),
-          },
-        } : {}),
-        "self-review": {
-          command: "node",
-          args: [join(env.skillsDir, "self-review/dist/index.js")],
-          env: cleanEnv({
-            ANTHROPIC_API_KEY: env.anthropicApiKey,
-            XAI_API_KEY: env.xaiApiKey,
-            FIRECRAWL_API_KEY: env.firecrawlApiKey,
-          }),
-        },
-        "codex": {
-          command: "codex",
-          args: ["--mcp"],
-          env: { ANTHROPIC_API_KEY: env.anthropicApiKey },
-        },
-      },
-    };
-
-    const agentHome = getAgentHome();
-    const claudeDir = join(agentHome, ".claude");
-    await mkdir(claudeDir, { recursive: true });
-    await writeFile(join(claudeDir, ".mcp.json"), JSON.stringify(mcpConfig, null, 2));
-    globalMcpWritten = true;
-    log.info("global MCP config written to ~/.claude/.mcp.json");
-  }
 
   const claudeMdPath = join(workspacePath, "CLAUDE.md");
   await writeFile(claudeMdPath, `# MoltClip Agent

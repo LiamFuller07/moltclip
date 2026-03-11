@@ -25,15 +25,17 @@ FROM base AS skills-builder
 
 WORKDIR /build
 
-# Copy skill packages
+# Copy skill packages + root tsconfig (skills extend it)
 COPY packages/skills/ packages/skills/
 COPY packages/shared/ packages/shared/
-COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml tsconfig.json ./
 
 # Install and build skills
 RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
-RUN pnpm -r --filter="@moltclip/shared" build 2>/dev/null || true
-RUN pnpm -r --filter="./packages/skills/*" build 2>/dev/null || true
+RUN pnpm -r --filter="@moltclip/shared" build || true
+RUN pnpm -r --filter="./packages/skills/*" build \
+    && echo "Skills built successfully" \
+    && ls packages/skills/*/dist/index.js 2>/dev/null || echo "WARNING: Some skill builds may have failed"
 
 # ── Build unified service ──
 FROM base AS app-builder

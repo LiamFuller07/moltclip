@@ -2,7 +2,7 @@ import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { userInfo } from "node:os";
 import pino from "pino";
 import { env } from "../env.js";
-import { ensureWorkspace } from "./workspace-setup.js";
+import { ensureWorkspace, writeMcpConfig } from "./workspace-setup.js";
 
 // Resolve moltclip user uid/gid for spawning Claude Code as non-root
 let agentUid: number | undefined;
@@ -56,9 +56,13 @@ export const agentPool = {
     await ensureWorkspace(workspace, opts.agentId);
 
     const cmd = opts.adapterType === "codex" ? "codex" : "claude";
+    const mcpConfigPath = await writeMcpConfig(workspace);
+    // IMPORTANT: prompt MUST come before --mcp-config because it's variadic (<configs...>)
+    // and would consume the prompt as another config path
     const args = opts.adapterType === "codex"
       ? ["--print", "--output-format", "json", opts.prompt]
-      : ["-p", "--output-format", "json", "--dangerously-skip-permissions", opts.prompt];
+      : ["-p", "--output-format", "json", "--dangerously-skip-permissions", opts.prompt, "--mcp-config", mcpConfigPath];
+    log.info({ cmd, args: args.map((a, i) => i === args.indexOf(opts.prompt) ? `<prompt:${a.length}chars>` : a) }, "spawning agent");
 
     const childEnv: Record<string, string> = {
       ...(process.env as Record<string, string>),
