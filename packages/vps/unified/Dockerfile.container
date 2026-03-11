@@ -1,0 +1,104 @@
+# ── MoltClip All-in-One Container ──
+# Single container with Postgres + Redis + Node.js app + Claude Code CLI + Playwright
+# Managed by supervisord. Designed for Cloudflare Containers (no sidecars).
+
+FROM node:20-bookworm AS base
+
+# ── System dependencies ──
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Playwright/Chromium
+    libnss3 libatk-bridge2.0-0 libdrm2 libxcomposite1 libxdamage1 \
+    libxrandr2 libgbm1 libasound2 libpangocairo-1.0-0 libgtk-3-0 \
+    libxshmfence1 fonts-noto-color-emoji fonts-liberation \
+    # Postgres + Redis
+    postgresql postgresql-client redis-server \
+    # Process manager
+    supervisor \
+    # Utils
+    procps curl git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# pnpm
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+
+# Claude Code CLI (authenticates via ANTHROPIC_API_KEY env var)
+RUN npm install -g @anthropic-ai/claude-code
+
+# ── Build MCP skills ──
+FROM base AS skills-builder
+
+WORKDIR /build
+
+COPY packages/skills/ packages/skills/
+COPY packages/shared/ packages/shared/
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
+
+RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+RUN pnpm -r --filter="@moltclip/shared" build 2>/dev/null || true
+RUN pnpm -r --filter="./packages/skills/*" build 2>/dev/null || true
+
+# ── Build unified service ──
+FROM base AS app-builder
+
+WORKDIR /build
+
+COPY packages/vps/unified/package.json packages/vps/unified/pnpm-lock.yaml* ./
+RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+
+COPY packages/vps/unified/ .
+RUN pnpm build
+
+# ── Final image ──
+FROM base
+
+WORKDIR /app
+
+# Install Playwright Chromium
+RUN npx playwright install chromium
+
+# Copy built unified service
+COPY --from=app-builder /build/dist ./dist
+COPY --from=app-builder /build/node_modules ./node_modules
+COPY --from=app-builder /build/package.json .
+
+# Copy built MCP skills
+COPY --from=skills-builder /build/packages/skills /app/packages/skills
+COPY --from=skills-builder /build/packages/shared /app/packages/shared
+
+# Create data directories
+RUN mkdir -p /data/profiles /data/workspaces /data/storage /data/logs
+
+# ── Configure Postgres ──
+RUN mkdir -p /var/run/postgresql && chown -R postgres:postgres /var/run/postgresql
+USER postgres
+RUN /usr/lib/postgresql/*/bin/initdb -D /var/lib/postgresql/data
+RUN /usr/lib/postgresql/*/bin/pg_ctl -D /var/lib/postgresql/data start && \
+    psql --command "CREATE USER moltclip WITH PASSWORD 'moltclip';" && \
+    psql --command "CREATE DATABASE moltclip OWNER moltclip;" && \
+    psql --command "ALTER USER moltclip CREATEDB;" && \
+    /usr/lib/postgresql/*/bin/pg_ctl -D /var/lib/postgresql/data stop
+USER root
+
+# ── Configure Redis ──
+RUN mkdir -p /var/run/redis && chown redis:redis /var/run/redis
+RUN sed -i 's/^bind .*/bind 127.0.0.1/' /etc/redis/redis.conf && \
+    sed -i 's/^# maxmemory .*/maxmemory 256mb/' /etc/redis/redis.conf && \
+    echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf && \
+    sed -i 's/^daemonize .*/daemonize no/' /etc/redis/redis.conf
+
+# ── Supervisord config ──
+COPY packages/vps/unified/supervisord.conf /etc/supervisor/conf.d/moltclip.conf
+
+# ── Startup script ──
+COPY packages/vps/unified/start.sh /start.sh
+RUN chmod +x /start.sh
+
+# Verify tools
+RUN claude --version || echo "claude CLI installed"
+
+EXPOSE 8800
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=5 \
+  CMD curl -f http://localhost:8800/health || exit 1
+
+CMD ["/start.sh"]

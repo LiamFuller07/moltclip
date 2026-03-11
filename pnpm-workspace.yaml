@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - packages/workers/*
+  - packages/skills/*
   - packages/vps/*
   - packages/vps/mcp-servers/*
   - packages/cli

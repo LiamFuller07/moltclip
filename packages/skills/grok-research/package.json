@@ -1,0 +1,23 @@
+{
+  "name": "@moltclip/grok-research",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@moltclip/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "openai": "^4.76.0",
+    "p-retry": "^6.2.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,77 @@
+# ── MoltClip Unified VPS ──
+# 3 containers: app (everything) + postgres + redis
+# All agent orchestration, skills, browsers, and cron in one place.
+
+services:
+  app:
+    build:
+      context: ../../../  # monorepo root (needs skills/ and shared/)
+      dockerfile: packages/vps/unified/Dockerfile
+    ports:
+      - "8800:8800"
+    env_file:
+      - .env
+    volumes:
+      - profiles:/data/profiles
+      - workspaces:/data/workspaces
+      - storage:/data/storage
+      - logs:/data/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "6"
+          memory: 12G
+        reservations:
+          cpus: "2"
+          memory: 4G
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      - POSTGRES_USER=moltclip
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-moltclip}
+      - POSTGRES_DB=moltclip
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moltclip"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 768M
+
+volumes:
+  pgdata:
+  redisdata:
+  profiles:
+  workspaces:
+  storage:
+  logs:

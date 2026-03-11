@@ -1,0 +1,52 @@
+{
+  "name": "moltclip-harness",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-18",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "moltclip-state"
+    }
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "KV_HARNESS",
+      "id": "571d6059d06d45bbb08dc1061027eda2"
+    }
+  ],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "moltclip-harness",
+      "database_id": "87e7944d-417a-49cd-a722-d154b33cf80b"
+    }
+  ],
+
+  // Multiple cron triggers for different monitors
+  "triggers": {
+    "crons": [
+      "*/30 * * * *",
+      "0 */2 * * *",
+      "0 */4 * * *",
+      "0 * * * *"
+    ]
+  },
+
+  // Worker secrets (set via wrangler secret put):
+  // XAI_API_KEY - Grok API
+  // FIRECRAWL_API_KEY - Firecrawl
+  // X_BEARER_TOKEN - X API v2
+  // GITHUB_TOKEN - GitHub PAT
+  // CONTROLLER_SECRET - shared auth secret
+
+  "services": [
+    {
+      "binding": "MASTER_WORKER",
+      "service": "moltclip-master"
+    }
+  ]
+}
