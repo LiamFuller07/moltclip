@@ -112,7 +112,7 @@ export const taskRunner = {
 
   async complete(taskId: string, status: string, result: any, error: string | null): Promise<void> {
     await sql`
-      UPDATE tasks SET status = ${status}, result = ${JSON.stringify(result)}, error = ${error}, completed_at = NOW()
+      UPDATE tasks SET status = ${status}, result = ${result ? sql.json(result) : null}, error = ${error}, completed_at = NOW()
       WHERE id = ${taskId}
     `;
     log.info({ taskId, status, error }, "task completed");

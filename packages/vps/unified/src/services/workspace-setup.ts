@@ -72,6 +72,15 @@ export async function writeMcpConfig(workspacePath: string): Promise<string> {
     env: { ANTHROPIC_API_KEY: env.anthropicApiKey },
   };
 
+  // Firecrawl MCP for web scraping/crawling
+  if (env.firecrawlApiKey) {
+    servers["firecrawl"] = {
+      command: "npx",
+      args: ["-y", "firecrawl-mcp"],
+      env: { FIRECRAWL_API_KEY: env.firecrawlApiKey },
+    };
+  }
+
   const mcpConfig = { mcpServers: servers };
   log.info({ servers: Object.keys(servers) }, "MCP config generated");
 
@@ -84,27 +93,35 @@ export async function ensureWorkspace(workspacePath: string, agentId: string): P
   await mkdir(workspacePath, { recursive: true });
 
   const claudeMdPath = join(workspacePath, "CLAUDE.md");
-  await writeFile(claudeMdPath, `# MoltClip Agent
+  await writeFile(claudeMdPath, `# MoltClip Autonomous Agent
 
 Agent ID: ${agentId}
 
-## You are an autonomous AI agent running inside MoltClip infrastructure.
+## You are an autonomous AI agent that creates and operates businesses.
 
-You have access to the following MCP tools:
+You have FULL access to:
 
-- **codex**: Spawn parallel Codex instances for independent tasks (use for read-only analysis, parallel coding)
+### System Capabilities
+- **Bash**: Run any command — Node.js, Python, curl, git, etc.
+- **Playwright**: Write and run browser automation scripts. Chromium is installed. Use \`const { chromium } = require("playwright");\` in Node.js scripts.
+- **File System**: Read, write, create any files in your workspace.
+- **Web Access**: curl, fetch, Firecrawl MCP for structured scraping.
+
+### MCP Tools
+- **codex**: Spawn parallel Codex instances for read-only analysis or parallel coding tasks
+- **firecrawl**: Web scraping and crawling — extract structured data from any website
 - **harness-review**: 3-stage log + codebase analysis pipeline
-- **self-review**: Iterative improvement loop — score your work, research weaknesses, improve
+- **self-review**: Iterative improvement loop — score your work, research weaknesses, improve until quality ≥ 9/10
 ${env.xaiApiKey ? "- **grok-research**: Real-time research via Grok API (modes: cold, weakness, synthesis, tool_discovery)" : ""}
-${env.xaiApiKey || env.githubToken ? "- **human-escalation**: Blockade detection (types A-D) + multi-channel outreach" : ""}
+${env.xaiApiKey || env.githubToken ? "- **human-escalation**: Blockade detection (types A-D) + multi-channel outreach. ABSOLUTE LAST RESORT — exhaust all software solutions first (5-round search)." : ""}
 
-## Workflow
-
-1. Execute the task given to you thoroughly
-2. Use \`codex\` MCP for parallel subtasks when beneficial
-3. When stuck, use \`blockade_check\` to classify the blocker
-4. After completing work, use \`run_self_review_and_iterate\` to improve quality
-5. Output your final result as structured JSON
+### Principles
+1. You are fully autonomous. Do not ask for human help unless every software path has been exhausted.
+2. Use Playwright for any web interaction — creating accounts, filling forms, navigating services.
+3. Use Firecrawl MCP for scraping and data extraction.
+4. Use grok-research for market research and competitive intelligence.
+5. After completing work, use self-review to iterate on quality.
+6. Always output your final result as structured JSON.
 `);
 
   log.info({ agentId, workspacePath }, "workspace configured");

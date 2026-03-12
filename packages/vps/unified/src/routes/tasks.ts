@@ -9,7 +9,7 @@ app.post("/api/tasks", async (c) => {
 
   const [task] = await sql`
     INSERT INTO tasks (id, agent_id, payload, priority)
-    VALUES (${id}, ${agentId || null}, ${JSON.stringify(payload || {})}, ${priority || 0})
+    VALUES (${id}, ${agentId || null}, ${sql.json(payload || {})}, ${priority || 0})
     RETURNING *
   `;
 
@@ -54,6 +54,41 @@ app.post("/api/tasks/:taskId/complete", async (c) => {
 
   if (!task) return c.json({ error: "Task not found" }, 404);
   return c.json({ task });
+});
+
+// ── Goals endpoint — send high-level commands like "Build a company" ──
+app.post("/api/goals", async (c) => {
+  const { goal, context, priority } = await c.req.json();
+  if (!goal) return c.json({ error: "goal is required" }, 400);
+
+  const id = `goal_${crypto.randomUUID().slice(0, 12)}`;
+  const agentId = `agent_${crypto.randomUUID().slice(0, 8)}`;
+
+  const [task] = await sql`
+    INSERT INTO tasks (id, agent_id, payload, priority)
+    VALUES (${id}, ${agentId}, ${sql.json({
+      isGoal: true,
+      goal,
+      context: context || null,
+    })}, ${priority || 0})
+    RETURNING *
+  `;
+
+  return c.json({ goalId: id, agentId, status: "pending", message: "Goal queued for orchestrator decomposition" }, 201);
+});
+
+app.get("/api/goals/:goalId", async (c) => {
+  const goalId = c.req.param("goalId");
+  const [goal] = await sql`SELECT * FROM tasks WHERE id = ${goalId}`;
+  if (!goal) return c.json({ error: "Goal not found" }, 404);
+
+  const subTasks = await sql`
+    SELECT id, status, result, error, (payload->>'description') as description, (payload->>'subTaskId') as sub_id, created_at, completed_at
+    FROM tasks WHERE (payload->>'parentGoalId') = ${goalId}
+    ORDER BY created_at
+  `;
+
+  return c.json({ goal, subTasks });
 });
 
 app.post("/api/tasks/:taskId/cancel", async (c) => {
